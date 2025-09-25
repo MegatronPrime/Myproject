@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D图数据库可视化 - Neo4j风格</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            font-weight: 400;
+            line-height: 1.6;
+        }
+        
+        header {
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(10px);
+            padding: 15px 25px;
+            border-bottom: 1px solid rgba(68, 68, 68, 0.5);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .logo {
+            font-size: 26px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00b894, #00cec9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            font-size: 14px;
+            box-shadow: 0 4px 6px rgba(0, 184, 148, 0.2);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 184, 148, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 320px;
+            background: rgba(30, 30, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(68, 68, 68, 0.4);
+            padding: 25px;
+            overflow-y: auto;
+            z-index: 10;
+            box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .sidebar h2 {
+            margin-bottom: 20px;
+            color: #00b894;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+        
+        .query-box {
+            background: rgba(45, 45, 45, 0.7);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(68, 68, 68, 0.4);
+        }
+        
+        textarea {
+            width: 100%;
+            height: 120px;
+            background: rgba(60, 60, 60, 0.7);
+            border: 1px solid rgba(85, 85, 85, 0.5);
+            border-radius: 8px;
+            color: #e0e0e0;
+            padding: 12px;
+            resize: vertical;
+            margin-bottom: 15px;
+            font-size: 14px;
+            font-weight: 400;
+            transition: border 0.3s;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #00b894;
+        }
+        
+        .node-list, .relationship-list {
+            margin-bottom: 25px;
+        }
+        
+        .node-item, .relationship-item {
+            background: rgba(45, 45, 45, 0.7);
+            padding: 14px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+            font-weight: 500;
+        }
+        
+        .node-item:hover, .relationship-item:hover {
+            background: rgba(55, 55, 55, 0.8);
+            transform: translateX(5px);
+        }
+        
+        .node-item[data-type="Person"] {
+            border-left-color: #e17055;
+        }
+        
+        .node-item[data-type="Movie"] {
+            border-left-color: #0984e3;
+        }
+        
+        .node-item[data-type="Genre"] {
+            border-left-color: #00b894;
+        }
+        
+        .relationship-item[data-type="ACTED_IN"] {
+            border-left-color: #fdcb6e;
+        }
+        
+        .relationship-item[data-type="DIRECTED"] {
+            border-left-color: #a29bfe;
+        }
+        
+        .relationship-item[data-type="BELONGS_TO"] {
+            border-left-color: #fd79a8;
+        }
+        
+        .graph-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #graph3d {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .toolbar {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 30, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            gap: 10px;
+            z-index: 50;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .toolbar button {
+            background: rgba(85, 85, 85, 0.7);
+            padding: 8px 14px;
+            font-size: 13px;
+        }
+        
+        .toolbar button.active {
+            background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+        }
+        
+        .node-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(30, 30, 30, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 20px;
+            width: 320px;
+            max-height: 250px;
+            overflow-y: auto;
+            display: none;
+            z-index: 50;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(68, 68, 68, 0.4);
+        }
+        
+        .node-info h3 {
+            margin-bottom: 15px;
+            color: #00b894;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .property {
+            margin-bottom: 10px;
+            display: flex;
+        }
+        
+        .property-name {
+            font-weight: 600;
+            color: #aaa;
+            min-width: 100px;
+        }
+        
+        .property-value {
+            color: #e0e0e0;
+            flex: 1;
+        }
+        
+        footer {
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(10px);
+            padding: 12px 25px;
+            border-top: 1px solid rgba(68, 68, 68, 0.4);
+            font-size: 14px;
+            color: #888;
+            text-align: center;
+            z-index: 100;
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(30, 30, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px;
+            width: 250px;
+            font-size: 13px;
+            color: #aaa;
+            z-index: 50;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .instructions h4 {
+            margin-bottom: 10px;
+            color: #00b894;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .instructions p {
+            margin-bottom: 8px;
+        }
+        
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(60, 60, 60, 0.3);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 100, 100, 0.5);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(120, 120, 120, 0.7);
+        }
+        
+        /* 节点标签样式 */
+        .node-label {
+            position: absolute;
+            background: rgba(30, 30, 30, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            white-space: nowrap;
+            transform: translate(-50%, -100%);
+            margin-top: -10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .edge-label {
+            position: absolute;
+            background: rgba(30, 30, 30, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            pointer-events: none;
+            white-space: nowrap;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">3D GraphDB Visualizer</div>
+        <div class="controls">
+            <button id="load-sample">加载示例数据</button>
+            <button id="reset-view">重置视图</button>
+            <button id="export-graph">导出图像</button>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="query-box">
+                <h2>Cypher 查询</h2>
+                <textarea id="cypher-query" placeholder="MATCH (n)-[r]->(m) RETURN n, r, m">MATCH (n)-[r]->(m) RETURN n, r, m</textarea>
+                <button id="execute-query">执行查询</button>
+            </div>
+            
+            <div class="node-list">
+                <h2>节点类型</h2>
+                <div class="node-item" data-type="Person">人物 (Person)</div>
+                <div class="node-item" data-type="Movie">电影 (Movie)</div>
+                <div class="node-item" data-type="Genre">类型 (Genre)</div>
+            </div>
+            
+            <div class="relationship-list">
+                <h2>关系类型</h2>
+                <div class="relationship-item" data-type="ACTED_IN">出演 (ACTED_IN)</div>
+                <div class="relationship-item" data-type="DIRECTED">导演 (DIRECTED)</div>
+                <div class="relationship-item" data-type="BELONGS_TO">属于 (BELONGS_TO)</div>
+            </div>
+        </div>
+        
+        <div class="graph-container">
+            <div id="graph3d"></div>
+            
+            <div class="toolbar">
+                <button id="layout-3d" class="active">3D 自动布局</button>
+                <button id="layout-sphere">球形布局</button>
+                <button id="layout-grid">网格布局</button>
+                <button id="toggle-labels">切换标签</button>
+            </div>
+            
+            <div class="node-info" id="node-info">
+                <h3>节点信息</h3>
+                <div id="node-details"></div>
+            </div>
+            
+            <div class="instructions">
+                <h4>操作指南</h4>
+                <p>• 鼠标左键拖拽：旋转视图</p>
+                <p>• 鼠标右键拖拽：平移视图</p>
+                <p>• 鼠标滚轮：缩放视图</p>
+                <p>• 点击节点：查看详细信息</p>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <div>3D GraphDB Visualizer - 基于Three.js的3D节点关系可视化工具</div>
+    </footer>
+
+    <script>
+        // 初始化Three.js场景
+        let scene, camera, renderer, controls;
+        let nodes = [], edges = [];
+        let raycaster, mouse;
+        let selectedNode = null;
+        let showLabels = true;
+        let nodeLabels = [], edgeLabels = [];
+        
+        // 初始化函数
+        function init() {
+            // 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0c0c0c);
+            scene.fog = new THREE.Fog(0x0c0c0c, 50, 200);
+            
+            // 创建相机
+            camera = new THREE.PerspectiveCamera(60, (window.innerWidth - 320) / (window.innerHeight - 80), 0.1, 1000);
+            camera.position.set(0, 20, 50);
+            
+            // 创建渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth - 320, window.innerHeight - 80);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('graph3d').appendChild(renderer.domElement);
+            
+            // 添加轨道控制
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.5;
+            
+            // 添加灯光
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 50, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // 添加点光源
+            const pointLight = new THREE.PointLight(0x00b894, 0.5, 100);
+            pointLight.position.set(0, 20, 0);
+            scene.add(pointLight);
+            
+            // 射线投射器和鼠标向量
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // 窗口大小调整事件
+            window.addEventListener('resize', onWindowResize);
+            
+            // 鼠标点击事件
+            renderer.domElement.addEventListener('click', onMouseClick);
+            
+            // 加载示例数据
+            loadSampleData();
+            
+            // 开始动画循环
+            animate();
+        }
+        
+        // 窗口大小调整处理
+        function onWindowResize() {
+            camera.aspect = (window.innerWidth - 320) / (window.innerHeight - 80);
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth - 320, window.innerHeight - 80);
+            updateLabels();
+        }
+        
+        // 鼠标点击处理
+        function onMouseClick(event) {
+            // 计算鼠标在归一化设备坐标中的位置
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            // 更新射线投射器
+            raycaster.setFromCamera(mouse, camera);
+            
+            // 计算与节点的交点
+            const intersects = raycaster.intersectObjects(nodes.map(n => n.sphere));
+            
+            if (intersects.length > 0) {
+                const clickedNode = nodes.find(n => n.sphere === intersects[0].object);
+                if (clickedNode) {
+                    selectNode(clickedNode);
+                }
+            } else {
+                // 点击空白处，取消选择
+                if (selectedNode) {
+                    selectedNode.sphere.material.emissive.setHex(0x000000);
+                    selectedNode = null;
+                }
+                document.getElementById('node-info').style.display = 'none';
+            }
+        }
+        
+        // 选择节点
+        function selectNode(node) {
+            // 取消之前选择的节点
+            if (selectedNode) {
+                selectedNode.sphere.material.emissive.setHex(0x000000);
+            }
+            
+            // 选择新节点
+            selectedNode = node;
+            selectedNode.sphere.material.emissive.setHex(0x444444);
+            
+            // 显示节点信息
+            const nodeInfo = document.getElementById('node-info');
+            const nodeDetails = document.getElementById('node-details');
+            
+            let detailsHTML = '';
+            detailsHTML += `<div class="property"><span class="property-name">ID:</span> <span class="property-value">${node.id}</span></div>`;
+            detailsHTML += `<div class="property"><span class="property-name">标签:</span> <span class="property-value">${node.label}</span></div>`;
+            detailsHTML += `<div class="property"><span class="property-name">类型:</span> <span class="property-value">${node.type}</span></div>`;
+            
+            if (node.properties) {
+                for (const [key, value] of Object.entries(node.properties)) {
+                    detailsHTML += `<div class="property"><span class="property-name">${key}:</span> <span class="property-value">${value}</span></div>`;
+                }
+            }
+            
+            nodeDetails.innerHTML = detailsHTML;
+            nodeInfo.style.display = 'block';
+        }
+        
+        // 创建节点标签
+        function createNodeLabel(node) {
+            const label = document.createElement('div');
+            label.className = 'node-label';
+            label.textContent = node.label;
+            label.style.display = showLabels ? 'block' : 'none';
+            document.body.appendChild(label);
+            
+            nodeLabels.push({
+                node: node,
+                element: label
+            });
+        }
+        
+        // 创建关系标签
+        function createEdgeLabel(edge) {
+            const label = document.createElement('div');
+            label.className = 'edge-label';
+            label.textContent = edge.label;
+            label.style.display = showLabels ? 'block' : 'none';
+            document.body.appendChild(label);
+            
+            edgeLabels.push({
+                edge: edge,
+                element: label
+            });
+        }
+        
+        // 更新标签位置
+        function updateLabels() {
+            // 更新节点标签
+            nodeLabels.forEach(item => {
+                const node = item.node;
+                const element = item.element;
+                
+                const vector = new THREE.Vector3();
+                node.sphere.getWorldPosition(vector);
+                vector.project(camera);
+                
+                const rect = renderer.domElement.getBoundingClientRect();
+                const x = (vector.x * 0.5 + 0.5) * rect.width + rect.left;
+                const y = (-vector.y * 0.5 + 0.5) * rect.height + rect.top;
+                
+                element.style.left = `${x}px`;
+                element.style.top = `${y}px`;
+            });
+            
+            // 更新关系标签
+            edgeLabels.forEach(item => {
+                const edge = item.edge;
+                const element = item.element;
+                
+                const sourcePos = edge.sourceNode.sphere.position.clone();
+                const targetPos = edge.targetNode.sphere.position.clone();
+                const midPoint = new THREE.Vector3().addVectors(sourcePos, targetPos).multiplyScalar(0.5);
+                
+                midPoint.project(camera);
+                
+                const rect = renderer.domElement.getBoundingClientRect();
+                const x = (midPoint.x * 0.5 + 0.5) * rect.width + rect.left;
+                const y = (-midPoint.y * 0.5 + 0.5) * rect.height + rect.top;
+                
+                element.style.left = `${x}px`;
+                element.style.top = `${y}px`;
+            });
+        }
+        
+        // 加载示例数据
+        function loadSampleData() {
+            // 清除现有数据
+            nodes.forEach(node => scene.remove(node.sphere));
+            edges.forEach(edge => scene.remove(edge.line));
+            
+            // 清除标签
+            nodeLabels.forEach(item => item.element.remove());
+            edgeLabels.forEach(item => item.element.remove());
+            nodeLabels = [];
+            edgeLabels = [];
+            
+            nodes = [];
+            edges = [];
+            
+            // 示例节点数据
+            const nodeData = [
+                { id: 'p1', label: '汤姆·汉克斯', type: 'Person', properties: { name: '汤姆·汉克斯', born: 1956, nationality: '美国' } },
+                { id: 'p2', label: '罗宾·怀特', type: 'Person', properties: { name: '罗宾·怀特', born: 1966, nationality: '美国' } },
+                { id: 'p3', label: '罗伯特·泽米吉斯', type: 'Person', properties: { name: '罗伯特·泽米吉斯', born: 1952, nationality: '美国' } },
+                { id: 'm1', label: '阿甘正传', type: 'Movie', properties: { title: '阿甘正传', released: 1994, tagline: '生活就像一盒巧克力' } },
+                { id: 'm2', label: '荒岛余生', type: 'Movie', properties: { title: '荒岛余生', released: 2000, tagline: '在绝望中寻找希望' } },
+                { id: 'g1', label: '剧情', type: 'Genre', properties: { name: '剧情' } },
+                { id: 'g2', label: '爱情', type: 'Genre', properties: { name: '爱情' } },
+                { id: 'g3', label: '冒险', type: 'Genre', properties: { name: '冒险' } }
+            ];
+            
+            // 示例关系数据
+            const edgeData = [
+                { source: 'p1', target: 'm1', label: 'ACTED_IN', properties: { roles: ['阿甘'] } },
+                { source: 'p2', target: 'm1', label: 'ACTED_IN', properties: { roles: ['珍妮'] } },
+                { source: 'p3', target: 'm1', label: 'DIRECTED', properties: {} },
+                { source: 'p1', target: 'm2', label: 'ACTED_IN', properties: { roles: ['查克'] } },
+                { source: 'm1', target: 'g1', label: 'BELONGS_TO', properties: {} },
+                { source: 'm1', target: 'g2', label: 'BELONGS_TO', properties: {} },
+                { source: 'm2', target: 'g1', label: 'BELONGS_TO', properties: {} },
+                { source: 'm2', target: 'g3', label: 'BELONGS_TO', properties: {} }
+            ];
+            
+            // 创建节点
+            nodeData.forEach(data => {
+                createNode(data);
+            });
+            
+            // 创建关系
+            edgeData.forEach(data => {
+                createEdge(data);
+            });
+            
+            // 应用3D布局
+            apply3DLayout();
+        }
+        
+        // 创建节点
+        function createNode(data) {
+            // 根据节点类型设置颜色
+            let color;
+            switch(data.type) {
+                case 'Person': color = 0xe17055; break;
+                case 'Movie': color = 0x0984e3; break;
+                case 'Genre': color = 0x00b894; break;
+                default: color = 0xaaaaaa;
+            }
+            
+            // 创建球体几何体
+            const geometry = new THREE.SphereGeometry(1.5, 32, 32);
+            const material = new THREE.MeshPhongMaterial({ 
+                color: color,
+                shininess: 30,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.castShadow = true;
+            sphere.receiveShadow = true;
+            
+            // 随机位置（布局时会调整）
+            sphere.position.x = (Math.random() - 0.5) * 10;
+            sphere.position.y = (Math.random() - 0.5) * 10;
+            sphere.position.z = (Math.random() - 0.5) * 10;
+            
+            scene.add(sphere);
+            
+            // 保存节点信息
+            const node = {
+                id: data.id,
+                label: data.label,
+                type: data.type,
+                properties: data.properties,
+                sphere: sphere
+            };
+            
+            nodes.push(node);
+            
+            // 创建节点标签
+            createNodeLabel(node);
+            
+            return node;
+        }
+        
+        // 创建关系
+        function createEdge(data) {
+            const sourceNode = nodes.find(n => n.id === data.source);
+            const targetNode = nodes.find(n => n.id === data.target);
+            
+            if (!sourceNode || !targetNode) return;
+            
+            // 根据关系类型设置颜色
+            let color;
+            switch(data.label) {
+                case 'ACTED_IN': color = 0xfdcb6e; break;
+                case 'DIRECTED': color = 0xa29bfe; break;
+                case 'BELONGS_TO': color = 0xfd79a8; break;
+                default: color = 0x636e72;
+            }
+            
+            // 创建线几何体
+            const geometry = new THREE.BufferGeometry();
+            const material = new THREE.LineBasicMaterial({ 
+                color: color,
+                linewidth: 2
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            
+            // 保存关系信息
+            const edge = {
+                source: data.source,
+                target: data.target,
+                label: data.label,
+                properties: data.properties,
+                line: line,
+                sourceNode: sourceNode,
+                targetNode: targetNode
+            };
+            
+            edges.push(edge);
+            
+            // 创建关系标签
+            createEdgeLabel(edge);
+            
+            return edge;
+        }
+        
+        // 应用3D布局
+        function apply3DLayout() {
+            // 简单力导向布局算法
+            const center = new THREE.Vector3(0, 0, 0);
+            const radius = 15;
+            
+            // 将节点分布在球面上
+            nodes.forEach((node, i) => {
+                const phi = Math.acos(-1 + (2 * i) / nodes.length);
+                const theta = Math.sqrt(nodes.length * Math.PI) * phi;
+                
+                node.sphere.position.x = radius * Math.cos(theta) * Math.sin(phi);
+                node.sphere.position.y = radius * Math.sin(theta) * Math.sin(phi);
+                node.sphere.position.z = radius * Math.cos(phi);
+            });
+            
+            // 更新关系线
+            updateEdges();
+        }
+        
+        // 更新关系线
+        function updateEdges() {
+            edges.forEach(edge => {
+                const sourcePos = edge.sourceNode.sphere.position;
+                const targetPos = edge.targetNode.sphere.position;
+                
+                const points = [
+                    new THREE.Vector3(sourcePos.x, sourcePos.y, sourcePos.z),
+                    new THREE.Vector3(targetPos.x, targetPos.y, targetPos.z)
+                ];
+                
+                edge.line.geometry.setFromPoints(points);
+            });
+        }
+        
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // 更新控制
+            controls.update();
+            
+            // 轻微动画效果 - 节点浮动
+            const time = Date.now() * 0.001;
+            nodes.forEach((node, i) => {
+                node.sphere.position.y += Math.sin(time + i) * 0.005;
+            });
+            
+            // 更新关系线
+            updateEdges();
+            
+            // 更新标签位置
+            updateLabels();
+            
+            // 渲染场景
+            renderer.render(scene, camera);
+        }
+        
+        // 初始化
+        init();
+        
+        // 事件监听器
+        document.getElementById('load-sample').addEventListener('click', loadSampleData);
+        
+        document.getElementById('reset-view').addEventListener('click', function() {
+            controls.reset();
+        });
+        
+        document.getElementById('execute-query').addEventListener('click', function() {
+            const query = document.getElementById('cypher-query').value;
+            alert(`执行查询: ${query}\n(在实际应用中，这里会发送请求到后端API)`);
+        });
+        
+        document.getElementById('layout-3d').addEventListener('click', function() {
+            setActiveButton(this);
+            apply3DLayout();
+        });
+        
+        document.getElementById('layout-sphere').addEventListener('click', function() {
+            setActiveButton(this);
+            // 球形布局
+            const radius = 20;
+            nodes.forEach((node, i) => {
+                const phi = Math.acos(-1 + (2 * i) / nodes.length);
+                const theta = Math.sqrt(nodes.length * Math.PI) * phi;
+                
+                node.sphere.position.x = radius * Math.cos(theta) * Math.sin(phi);
+                node.sphere.position.y = radius * Math.sin(theta) * Math.sin(phi);
+                node.sphere.position.z = radius * Math.cos(phi);
+            });
+            updateEdges();
+        });
+        
+        document.getElementById('layout-grid').addEventListener('click', function() {
+            setActiveButton(this);
+            // 网格布局
+            const gridSize = Math.ceil(Math.sqrt(nodes.length));
+            const spacing = 6;
+            
+            nodes.forEach((node, i) => {
+                const row = Math.floor(i / gridSize);
+                const col = i % gridSize;
+                
+                node.sphere.position.x = (col - gridSize/2) * spacing;
+                node.sphere.position.y = (row - gridSize/2) * spacing;
+                node.sphere.position.z = 0;
+            });
+            updateEdges();
+        });
+        
+        document.getElementById('toggle-labels').addEventListener('click', function() {
+            showLabels = !showLabels;
+            nodeLabels.forEach(item => {
+                item.element.style.display = showLabels ? 'block' : 'none';
+            });
+            edgeLabels.forEach(item => {
+                item.element.style.display = showLabels ? 'block' : 'none';
+            });
+        });
+        
+        document.getElementById('export-graph').addEventListener('click', function() {
+            // 导出当前视图为图像
+            renderer.domElement.toBlob(function(blob) {
+                const link = document.createElement('a');
+                link.download = '3d-graph-export.png';
+                link.href = URL.createObjectURL(blob);
+                link.click();
+            });
+        });
+        
+        // 设置活动按钮样式
+        function setActiveButton(button) {
+            document.querySelectorAll('.toolbar button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            button.classList.add('active');
+        }
+        
+        // 节点类型筛选
+        document.querySelectorAll('.node-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const type = this.getAttribute('data-type');
+                nodes.forEach(node => {
+                    if (node.type === type) {
+                        node.sphere.material.opacity = 1.0;
+                        node.sphere.scale.set(1.2, 1.2, 1.2);
+                    } else {
+                        node.sphere.material.opacity = 0.3;
+                        node.sphere.scale.set(0.8, 0.8, 0.8);
+                    }
+                });
+            });
+        });
+        
+        // 关系类型筛选
+        document.querySelectorAll('.relationship-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const type = this.getAttribute('data-type');
+                edges.forEach(edge => {
+                    if (edge.label === type) {
+                        edge.line.material.opacity = 1.0;
+                        edge.line.material.linewidth = 3;
+                    } else {
+                        edge.line.material.opacity = 0.2;
+                        edge.line.material.linewidth = 1;
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
